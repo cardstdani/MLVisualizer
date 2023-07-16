@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>replit</title>
+    <link rel="icon"
+        href="https://upload.wikimedia.org/wikipedia/commons/thumb/c/c3/Python-logo-notext.svg/2048px-Python-logo-notext.svg.png">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.1/jquery.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.11.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@2.0.0/dist/tf.min.js"></script>
+    <script>
+        class SineActivation extends tf.layers.Layer {
+            constructor(config) {
+                super(config);
+                this.alpha = config.alpha;
+            }
+
+            call(input) {
+                return tf.tidy(() => {
+                    return tf.sin(input);
+                });
+            }
+
+            computeOutputShape(inputShape) {
+                return inputShape;
+            }
+
+            static get className() {
+                return 'sine';
+            }
+        }
+        tf.serialization.registerClass(SineActivation);
+
+        function onEpochEnd(epoch, logs) {
+            epochs.push(epoch);
+            losses.push(logs.loss);
+
+            Plotly.newPlot(lossCurve, [{
+                x: epochs,
+                y: losses
+            }], {
+                title: {
+                    text: 'Loss vs epochs',
+                    font: {
+                        family: 'Gelion',
+                        size: 10
+                    },
+                    xref: 'paper',
+                    x: 0.05,
+                }, xaxis: {
+                    title: {
+                        text: 'Epochs',
+                        font: {
+                            family: 'Gelion',
+                            size: 18,
+                            color: '#7f7f7f'
+                        }
+                    },
+                },
+                yaxis: {
+                    title: {
+                        text: 'Loss',
+                        font: {
+                            family: 'Gelion',
+                            size: 18,
+                            color: '#7f7f7f'
+                        }
+                    }
+                }
+            });
+            plotResult();
+        }
+
+        function plotResult() {
+            var preds = [];
+
+            for (var i = 0; i < x.length; i += 1) {
+                preds.push(model.predict(tf.tensor2d([x[i]], [1, 1])).arraySync()[0][0]);
+            }
+
+            Plotly.newPlot(dataCurve, [{
+                x: x,
+                y: y,
+                name: "Data"
+            }, {
+                x: x,
+                y: preds,
+                name: "Model prediction"
+            }], {
+                title: {
+                    text: 'Data vs model prediction',
+                    font: {
+                        family: 'Gelion',
+                        size: 10
+                    },
+                    xref: 'paper',
+                    x: 0.05,
+                }, xaxis: {
+                    title: {
+                        text: 'X Axis',
+                        font: {
+                            family: 'Gelion',
+                            size: 18,
+                            color: '#7f7f7f'
+                        }
+                    },
+                },
+                yaxis: {
+                    title: {
+                        text: 'Y Axis',
+                        font: {
+                            family: 'Gelion',
+                            size: 18,
+                            color: '#7f7f7f'
+                        }
+                    }
+                }
+            });
+        }
+
+        var epochs = [];
+        var losses = [];
+        var x = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        var y = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31];
+        var epoch = 50;
+        var layerCount = 0;
+
+        var model = tf.sequential({
+            layers: [
+                tf.layers.dense({inputShape: [1], units: 5, activation: 'sine'}),
+                tf.layers.dense({units: 3, activation: 'relu'}),
+                tf.layers.dense({units: 1})
+            ]
+        });
+
+        window.onload = function () {
+            lossCurve = document.getElementById('lossCurve');
+            dataCurve = document.getElementById('dataCurve');
+
+            document.getElementById("addButon").onclick = function () {
+                //Añadir en UI        
+                var newElement = document.getElementById("layer0").cloneNode(true);
+                layerCount += 1;
+                newElement.id = "layer" + (layerCount).toString();
+                document.getElementById("layersDiv").appendChild(newElement);
+            };
+
+            document.getElementById("substractButon").onclick = function () {
+                if (document.getElementById("layersDiv").children.length > 1) {
+                    document.getElementById("layersDiv").lastChild.remove();
+                    layerCount -= 1;
+                }
+            };
+
+            document.getElementById("trainButon").onclick = function () {
+                try {
+                    epochs = [];
+                    losses = [];
+                    lossCurve.innerHTML = "";
+                    dataCurve.innerHTML = "";
+
+                    model = tf.sequential({layers: []});
+                    var childs = document.getElementById("layersDiv").children;
+
+                    var select = childs[0].querySelector("#activations");
+                    model.add(tf.layers.dense({inputShape: [1], units: parseInt(childs[0].querySelector("#units").value), activation: select.options[select.selectedIndex].text}));
+
+                    for (var i = 1; i < childs.length; i++) {
+                        var select = childs[i].querySelector("#activations");
+                        model.add(tf.layers.dense({units: parseInt(childs[i].querySelector("#units").value), activation: select.options[select.selectedIndex].text}));
+                    }
+
+                    model.add(tf.layers.dense({units: 1}));
+                    model.compile({loss: 'meanAbsoluteError', optimizer: tf.train.adam(parseFloat(document.getElementById("lrInput").value)), metrics: ['accuracy']});
+                    model.fit(tf.tensor2d(x, [x.length, 1]), tf.tensor2d(y, [y.length, 1]), {epochs: epoch, batchSize: 1, callbacks: {onEpochEnd}}).then(() => {
+                        console.log("Model finished training");
+                        plotResult();
+                    });
+                }
+                catch (err) {
+                    alert(err.message);
+                }
+            };
+            document.getElementById("downloadButon").onclick = function () {
+                const saveResult = model.save('downloads://model');
+                $.fileDownload('model');
+            };
+
+            document.getElementById("epochsInput").onchange = function () {
+                epoch = parseInt(document.getElementById("epochsInput").value);
+            };
+        };
+    </script>
+    <style>
+        .body {
+            font-family: Arial;
+        }
+    </style>
+</head>
+
+<body id="bodyElem" style="background-color:#1f1f1f">
+    <p id="text" style="color:#ffffff; font-size:60px">ML</p>
+    <button id="trainButon">Train</button>
+    <button id="downloadButon">Download model</button>
+    <p id="layersNumber">1</p>
+    <button id="addButon">Add</button>
+    <button id="substractButon">Substract</button>
+    <div id="layersDiv" style="display: flex;">
+        <div id="layer0" style="width:11rem;height:10rem;background-color:#fff;margin:1rem">
+            <input id="units" type="number" value="3" />
+            <label for="activation">Activation:</label>
+            <select name="activation" id="activations">
+                <optgroup label="Linear">
+                    <option value="linear">linear</option>
+                </optgroup>
+                <optgroup label="Non-Linear">
+                    <option value="relu">relu</option>
+                    <option value="relu">elu</option>
+                    <option value="sine">sine</option>
+                    <option value="tanh">tanh</option>
+                </optgroup>
+            </select>
+        </div>
+    </div>
+    <input id="epochsInput" type="number" value="50" />
+    <input id="lrInput" type="number" value="0.001" />
+    <div id="dataCurve" style="width:45rem;height:30rem;"></div>
+    <div id="lossCurve" style="width:45rem;height:30rem;"></div>
+</body>
+
+</html>
